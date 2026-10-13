@@ -10,14 +10,16 @@ from tkinter import filedialog, messagebox, ttk
 
 import config
 from exporter import export_hits_only, export_marked
+from merge_ui import MergeTab
 from scanner import HitRecord, parse_keywords, scan_file
 
 BG_HIT = "#FFF3A3"
 
 
 class App:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, container=None):
         self.root = root
+        self.container = container or root  # 界面放进「筛查」页签
         root.title("聊天记录合规筛查工具")
 
         self.file_path = ""
@@ -39,7 +41,7 @@ class App:
         pad = {"padx": 8, "pady": 5}
 
         # 1. 文件
-        f1 = ttk.LabelFrame(self.root, text="① 待检查的 Excel 文件")
+        f1 = ttk.LabelFrame(self.container, text="① 待检查的 Excel 文件")
         f1.pack(fill="x", **pad)
         self.file_var = tk.StringVar()
         ttk.Entry(f1, textvariable=self.file_var).pack(side="left", fill="x", expand=True, padx=(8, 4), pady=8)
@@ -48,7 +50,7 @@ class App:
         self.file_info.pack(side="left", padx=8)
 
         # 2. 关键词
-        f2 = ttk.LabelFrame(self.root, text="② 关键词（用「、」分隔，也支持换行 / 逗号 / 分号）")
+        f2 = ttk.LabelFrame(self.container, text="② 关键词（用「、」分隔，也支持换行 / 逗号 / 分号）")
         f2.pack(fill="both", expand=False, **pad)
         wrap = ttk.Frame(f2)
         wrap.pack(fill="both", expand=True, padx=8, pady=(8, 4))
@@ -69,7 +71,7 @@ class App:
         ttk.Label(bar, text="（关键词会自动保存在本机，下次打开自动载入）", foreground="#888888").pack(side="left", padx=8)
 
         # 3. 执行
-        f3 = ttk.LabelFrame(self.root, text="③ 开始筛查")
+        f3 = ttk.LabelFrame(self.container, text="③ 开始筛查")
         f3.pack(fill="x", **pad)
         self.btn_scan = ttk.Button(f3, text="开始筛查", command=self.start_scan)
         self.btn_scan.pack(side="left", padx=8, pady=8)
@@ -81,7 +83,7 @@ class App:
         self.status.pack(side="left", padx=6)
 
         # 4. 结果
-        f4 = ttk.LabelFrame(self.root, text="④ 命中结果（双击查看完整原文）")
+        f4 = ttk.LabelFrame(self.container, text="④ 命中结果（双击查看完整原文）")
         f4.pack(fill="both", expand=True, **pad)
         cols = ("sheet", "row", "person", "peer", "date", "kw", "cnt")
         self.tree = ttk.Treeview(f4, columns=cols, show="headings", selectmode="browse")
@@ -102,7 +104,7 @@ class App:
         self.tree.bind("<Double-1>", lambda e: self.show_detail())
 
         # 5. 导出
-        f5 = ttk.Frame(self.root)
+        f5 = ttk.Frame(self.container)
         f5.pack(fill="x", **pad)
         self.summary = ttk.Label(f5, text="尚未筛查", foreground="#666666")
         self.summary.pack(side="left", padx=8)
@@ -378,7 +380,15 @@ class App:
 def main():
     root = tk.Tk()
     try:
-        App(root)
+        nb = ttk.Notebook(root)
+        nb.pack(fill="both", expand=True)
+        tab_scan = ttk.Frame(nb)
+        tab_merge = ttk.Frame(nb)
+        nb.add(tab_scan, text="筛查")
+        nb.add(tab_merge, text="合并")
+        app = App(root, tab_scan)
+        merge_tab = MergeTab(tab_merge, app=app, notebook=nb)
+        merge_tab.pack(fill="both", expand=True)
     except Exception:
         import traceback
         traceback.print_exc()
