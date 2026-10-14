@@ -1,7 +1,9 @@
-"""导出：在原表基础上新增「是否命中」「命中的关键词」两列，原文件不修改。"""
+"""导出：在原表基础上新增「是否命中」「命中的关键词」两列，并把消息内容里命中的关键词标红，原文件不修改。"""
 from typing import List
 
 from openpyxl import Workbook, load_workbook
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 from openpyxl.styles import Font, PatternFill
 
 from scanner import CONTENT_HEADERS, HitRecord, _norm, _find_col
@@ -11,6 +13,7 @@ KW_COL = "命中的关键词"
 
 HEADER_FILL = PatternFill("solid", fgColor="DDEBF7")
 HIT_FILL = PatternFill("solid", fgColor="FFF2CC")
+HIT_FONT = InlineFont(color="FFFF0000", b=True)  # 命中的关键词：红色加粗
 
 
 def _content_col(headers: List[str], fallback_index: int = None, ws=None):
@@ -33,8 +36,62 @@ def _last_used_col(headers: List[str], ws) -> int:
     return last
 
 
-def export_marked(src_path: str, dest_path: str, hits: List[HitRecord]) -> int:
-    """生成标记版 Excel：每个被扫描的工作表末尾追加 是否命中 / 命中的关键词 两列。"""
+def highlight_text(text, keywords: List[str], ignore_case: bool = True):
+    """把命中关键词切成富文本：命中处红色加粗，其余保持原样（单元格内部分文字着色）。"""
+    if not isinstance(text, str) or not text or not keywords:
+        return text
+
+    needles, seen = [], set()
+    for kw in keywords:
+        if not kw:
+            continue
+        nd = kw.lower() if ignore_case else kw
+        if nd not in seen:
+            seen.add(nd)
+            needles.append(nd)
+
+    hay = text.lower() if ignore_case else text
+    spans = []
+    for nd in needles:
+        start = 0
+        while True:
+            pos = hay.find(nd, start)
+            if pos < 0:
+                break
+            spans.append((pos, pos + len(nd)))
+            start = pos + len(nd)
+    if not spans:
+        return text
+
+    spans.sort()
+    merged = [list(spans[0])]
+    for s, e in spans[1:]:  # 合并重叠区间（关键词互相包含时）
+        if s <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], e)
+        else:
+            merged.append([s, e])
+
+    parts = []
+    cursor = 0
+    for s, e in merged:
+        if s > cursor:
+            parts.append(text[cursor:s])
+        parts.append(TextBlock(HIT_FONT, text[s:e]))
+        cursor = e
+    if cursor < len(text):
+        parts.append(text[cursor:])
+    return CellRichText(*parts)
+
+
+def export_marked(
+    src_path: str,
+    dest_path: str,
+    hits: List[HitRecord],
+    ignore_case: bool = True,
+    highlight: bool = True,
+) -> int:
+    """生成标记版 Excel：每个被扫描的工作表末尾追加 是否命中 / 命中的关键词 两列，
+    并把消息内容里命中的关键词标红。"""
     hit_map = {}
     for h in hits:
         hit_map.setdefault(h.sheet, {})[h.row] = h
@@ -65,6 +122,10 @@ def export_marked(src_path: str, dest_path: str, hits: List[HitRecord]) -> int:
             if h:
                 ws.cell(row=row, column=start, value="是").fill = HIT_FILL
                 ws.cell(row=row, column=start + 1, value="、".join(h.keywords))
+                if highlight and content_idx is not None:
+                    c = ws.cell(row=row, column=content_idx + 1)
+                    if isinstance(c.value, str):
+                        c.value = highlight_text(c.value, h.keywords, ignore_case)
                 marked_rows += 1
             else:
                 ws.cell(row=row, column=start, value="否")
@@ -74,8 +135,14 @@ def export_marked(src_path: str, dest_path: str, hits: List[HitRecord]) -> int:
     return marked_rows
 
 
-def export_hits_only(src_path: str, dest_path: str, hits: List[HitRecord]) -> int:
-    """仅导出命中行（保留原表列 + 新增两列），便于分发复核。"""
+def export_hits_only(
+    src_path: str,
+    dest_path: str,
+    hits: List[HitRecord],
+    ignore_case: bool = True,
+    highlight: bool = True,
+) -> int:
+    """仅导出命中行（保留原表列 + 新增两列），消息内容里的关键词同样标红，便于分发复核。"""
     by_sheet = {}
     for h in hits:
         by_sheet.setdefault(h.sheet, []).append(h)
@@ -113,10 +180,18 @@ def export_hits_only(src_path: str, dest_path: str, hits: List[HitRecord]) -> in
             c.font = Font(bold=True)
             c.fill = HEADER_FILL
 
+        content_idx = _find_col([_norm(v) for v in header], CONTENT_HEADERS)
+
         for r, h in enumerate(sorted(by_sheet[ws.title], key=lambda x: x.row), start=2):
             values = row_map.get(h.row, [])
             for i, v in enumerate(values, start=1):
                 sheet.cell(row=r, column=i, value=v)
+            if highlight and content_idx is not None and content_idx < len(values):
+                v = values[content_idx]
+                if isinstance(v, str):
+                    sheet.cell(row=r, column=content_idx + 1).value = highlight_text(
+                        v, h.keywords, ignore_case
+                    )
             sheet.cell(row=r, column=start, value="是").fill = HIT_FILL
             sheet.cell(row=r, column=start + 1, value="、".join(h.keywords))
             total += 1

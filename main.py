@@ -344,13 +344,14 @@ class App:
         self.status.configure(text="正在导出…")
         self.root.update_idletasks()
         try:
+            ignore = not self.case_sensitive.get()
             if only_hits:
-                n = export_hits_only(str(src), dest, self.result.hits)
-                msg = f"已导出 {n} 条命中记录。\n{dest}"
+                n = export_hits_only(str(src), dest, self.result.hits, ignore_case=ignore)
+                msg = f"已导出 {n} 条命中记录，消息内容里的命中关键词已标红。\n{dest}"
             else:
-                n = export_marked(str(src), dest, self.result.hits)
+                n = export_marked(str(src), dest, self.result.hits, ignore_case=ignore)
                 msg = (f"已生成标记版文件，新增「是否命中」「命中的关键词」两列，"
-                       f"其中 {n} 行标记为命中。\n{dest}")
+                       f"其中 {n} 行标记为命中，消息内容里的命中关键词已标红。\n{dest}")
             self.status.configure(text="导出完成")
             messagebox.showinfo("导出完成", msg)
             if messagebox.askyesno("打开", "是否打开所在文件夹？"):
