@@ -11,7 +11,8 @@ from merger import DEFAULT_SHEET, inspect_sheet, merge_sheet
 RULE_TEXT = (
     "合并规则：① 取第 1 个工作表（表 1）；"
     "② 当「姓名」「对方姓名」「消息时间的年月日」三者都相同时合并为一行；"
-    "③ 消息内容按原顺序拼接，每条前带 [2026-09-01 07:32:13] 时间戳；"
+    "③ 消息内容按原顺序拼接，每条前带 [2026-09-01 07:32:13 说话人] 时间戳"
+    "（发送标注姓名、接收标注对方姓名）；"
     "④ 消息时间只留年月日；⑤ 其余列取该组第一条；⑥ 空行跳过，原数据不动。"
 )
 
@@ -120,7 +121,7 @@ class MergeTab(ttk.Frame):
             )
             self.col_info.configure(
                 text=f"识别到的列：姓名={cols['name']}、对方姓名={cols['peer']}、"
-                f"消息时间={cols['time']}、消息内容={cols['content']}"
+                f"消息时间={cols['time']}、消息内容={cols['content']}、消息角色={cols['role']}"
             )
             if not self.dest_var.get().strip():
                 src = Path(path)

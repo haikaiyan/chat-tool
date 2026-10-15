@@ -2,7 +2,8 @@
 
 规则（表 1，列名识别不到时按 C/G/J/K 位置回退）：
 - 分组键：C 姓名 + G 对方姓名|昵称 + J 消息时间的年月日
-- K 消息内容：按原表顺序拼接，每条前面带 [YYYY-MM-DD HH:MM:SS] 时间戳
+- K 消息内容：按原表顺序拼接，每条前面带 [YYYY-MM-DD HH:MM:SS 说话人] 时间戳
+  （「发送」标注姓名、「接收」标注对方姓名）
 - J 消息时间：只保留年月日（2026-09-01）
 - 其余列：取该组第一条的值
 - 结果写入新工作表（默认「合并结果」），默认保存在原文件里；也可另存为新文件
@@ -22,9 +23,10 @@ NAME_CANDIDATES = ("姓名", "行员姓名", "员工姓名")
 PEER_CANDIDATES = ("对方姓名|昵称", "对方姓名", "客户姓名", "会话对象")
 TIME_CANDIDATES = ("消息时间", "聊天时间", "时间", "日期")
 CONTENT_CANDIDATES = ("消息内容", "聊天记录")
+ROLE_CANDIDATES = ("消息角色", "收发类型", "发送类型", "消息类型", "角色")
 
-# 找不到列名时的回退位置（0-based）：C 姓名 / G 对方姓名 / J 消息时间 / K 消息内容
-FALLBACK_COLS = {"name": 2, "peer": 6, "time": 9, "content": 10}
+# 找不到列名时的回退位置（0-based）：A 消息角色 / C 姓名 / G 对方姓名 / J 消息时间 / K 消息内容
+FALLBACK_COLS = {"role": 0, "name": 2, "peer": 6, "time": 9, "content": 10}
 
 DATE_RE = re.compile(r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})")
 EXCEL_CELL_LIMIT = 32767
@@ -107,9 +109,20 @@ def detect_columns(headers: List[str]) -> Tuple[Dict[str, int], Dict[str, str]]:
         ("peer", PEER_CANDIDATES),
         ("time", TIME_CANDIDATES),
         ("content", CONTENT_CANDIDATES),
+        ("role", ROLE_CANDIDATES),
     ):
         idx[key], labels[key] = find(cands, FALLBACK_COLS[key])
     return idx, labels
+
+
+def speaker_of(row, idx) -> str:
+    """决定本条消息标注谁：发送 → 姓名（行员），接收 → 对方姓名；识别不出时用姓名。"""
+    role = _norm(_cell(row, idx["role"]))
+    if "发送" in role:
+        return _norm(_cell(row, idx["name"]))
+    if "接收" in role:
+        return _norm(_cell(row, idx["peer"]))
+    return _norm(_cell(row, idx["name"]))
 
 
 def _unique_title(wb, title: str) -> str:
@@ -185,7 +198,9 @@ def merge_sheet(
                 order.append(key)
             text = _norm(_cell(row, idx["content"]))
             ts = time_text(_cell(row, idx["time"]))
-            g["parts"].append(f"[{ts}]\n{text}" if text else f"[{ts}]")
+            speaker = speaker_of(row, idx)
+            head = f"[{ts} {speaker}]" if speaker else f"[{ts}]"
+            g["parts"].append(f"{head}\n{text}" if text else head)
             if progress and done % 500 == 0:
                 progress(done, total + len(groups) + 1, "读取原表")
             if should_cancel and should_cancel():
